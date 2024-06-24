@@ -1,0 +1,117 @@
+
+
+-- Services
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
+
+-- Local player
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+-- Create Tool
+local tool = Instance.new("Tool")
+tool.RequiresHandle = false
+tool.Name = getgenv().changthenamehere_Settings.ToolName
+tool.Parent = player.Backpack
+
+-- Billboard GUI
+local function createBillboard(target)
+    local settings = getgenv().changthenamehere_Settings.BillboardSettings
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = target
+    billboard.Size = settings.Size
+    billboard.StudsOffset = settings.StudsOffset
+    billboard.AlwaysOnTop = true
+    
+    local frame = Instance.new("Frame", billboard)
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = settings.Color
+    frame.BackgroundTransparency = 0
+    frame.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = settings.CornerRadius
+    
+    billboard.Parent = Workspace
+    return billboard
+end
+
+-- Function to get the nearest player
+local function getNearestPlayer()
+    local nearestDistance = math.huge
+    local nearestPlayer = nil
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild(getgenv().changthenamehere_Settings.HitPart) then
+            local screenPoint = camera:WorldToViewportPoint(otherPlayer.Character[getgenv().changthenamehere_Settings.HitPart].Position)
+            local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)).magnitude
+            if distance < nearestDistance then
+                nearestDistance = distance
+                nearestPlayer = otherPlayer
+            end
+        end
+    end
+    return nearestPlayer
+end
+
+-- Notification
+local function showNotification(username)
+    StarterGui:SetCore("SendNotification", {
+        Title = getgenv().changthenamehere_Settings.ToolName,
+        Text = "Locked on: " .. username,
+        Duration = 5
+    })
+end
+
+-- Tool activation
+local SilentTarget = nil
+local Billboard = nil
+
+local function onCharacterAdded(character)
+    if getgenv().changthenamehere_Settings.Enabled and SilentTarget and SilentTarget.Character == character then
+        Billboard = createBillboard(SilentTarget.Character[getgenv().changthenamehere_Settings.HitPart])
+    end
+end
+
+tool.Activated:Connect(function()
+    getgenv().changthenamehere_Settings.Enabled = not getgenv().changthenamehere_Settings.Enabled
+    if getgenv().changthenamehere_Settings.Enabled then
+        SilentTarget = getNearestPlayer()
+        if SilentTarget then
+            showNotification(SilentTarget.DisplayName)
+            Billboard = createBillboard(SilentTarget.Character[getgenv().changthenamehere_Settings.HitPart])
+            SilentTarget.CharacterAdded:Connect(onCharacterAdded)
+        end
+    else
+        if Billboard then
+            Billboard:Destroy()
+            Billboard = nil
+        end
+        SilentTarget = nil
+    end
+end)
+
+-- Metatable modification
+local mt = getrawmetatable(game)
+local old = mt.__namecall
+setreadonly(mt, false)
+mt.__namecall = newcclosure(function(...)
+    local args = {...}
+    if getgenv().changthenamehere_Settings.Enabled and SilentTarget and SilentTarget.Character and getnamecallmethod() == "FireServer" and args[2] == "UpdateMousePos" then
+        args[3] = SilentTarget.Character[getgenv().changthenamehere_Settings.HitPart].Position + (SilentTarget.Character[getgenv().changthenamehere_Settings.HitPart].Velocity * getgenv().changthenamehere_Settings.Prediction)
+        return old(unpack(args))
+    end
+    return old(...)
+end)
+
+-- Connect character events
+player.CharacterRemoving:Connect(function()
+    tool.Parent = player.Backpack
+end)
+
+-- Initial connection
+if player.Character then
+    onCharacterAdded(player.Character)
+else
+    player.CharacterAdded:Connect(onCharacterAdded)
+end
